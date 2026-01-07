@@ -1,0 +1,37 @@
+{
+  "tests": [
+    {
+      "name": "Get dashboard data",
+      "method": "GET",
+      "path": "/?action=dashboard",
+      "expectedStatus": 200,
+      "expectedBody": {
+        "accounts": "array",
+        "transactions": "array",
+        "goals": "array",
+        "budgets": "array"
+      },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Get all accounts",
+      "method": "GET",
+      "path": "/?action=accounts",
+      "expectedStatus": 200,
+      "expectedBody": {
+        "accounts": "array"
+      },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Get categories",
+      "method": "GET",
+      "path": "/?action=categories",
+      "expectedStatus": 200,
+      "expectedBody": {
+        "categories": "array"
+      },
+      "bodyMatcher": "partial"
+    }
+  ]
+}

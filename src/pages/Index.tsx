@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -9,79 +9,110 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-
-interface Account {
-  id: string;
-  name: string;
-  balance: number;
-  type: string;
-}
-
-interface Transaction {
-  id: string;
-  type: 'income' | 'expense';
-  amount: number;
-  category: string;
-  description: string;
-  date: string;
-  account: string;
-}
-
-interface Budget {
-  category: string;
-  limit: number;
-  spent: number;
-  icon: string;
-}
-
-interface Goal {
-  id: string;
-  name: string;
-  target: number;
-  current: number;
-  icon: string;
-}
+import { api, type DashboardData, type Category } from '@/lib/api';
+import { useToast } from '@/hooks/use-toast';
 
 const Index = () => {
-  const [accounts] = useState<Account[]>([
-    { id: '1', name: 'Основная карта', balance: 245680, type: 'card' },
-    { id: '2', name: 'Накопительный', balance: 520000, type: 'savings' },
-    { id: '3', name: 'Наличные', balance: 15000, type: 'cash' },
-  ]);
+  const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const { toast } = useToast();
 
-  const [transactions] = useState<Transaction[]>([
-    { id: '1', type: 'expense', amount: 1250, category: 'Продукты', description: 'Перекрёсток', date: '2026-01-07', account: 'Основная карта' },
-    { id: '2', type: 'expense', amount: 3500, category: 'Транспорт', description: 'Заправка', date: '2026-01-06', account: 'Основная карта' },
-    { id: '3', type: 'income', amount: 85000, category: 'Зарплата', description: 'ООО Компания', date: '2026-01-05', account: 'Основная карта' },
-    { id: '4', type: 'expense', amount: 2800, category: 'Рестораны', description: 'Кофейня', date: '2026-01-05', account: 'Основная карта' },
-    { id: '5', type: 'expense', amount: 890, category: 'Здоровье', description: 'Аптека', date: '2026-01-04', account: 'Наличные' },
-  ]);
+  const [newTransaction, setNewTransaction] = useState({
+    type: 'expense' as 'income' | 'expense',
+    amount: '',
+    category_id: '',
+    description: '',
+    transaction_date: new Date().toISOString().split('T')[0],
+    account_id: '',
+  });
 
-  const [budgets] = useState<Budget[]>([
-    { category: 'Продукты', limit: 25000, spent: 12450, icon: 'ShoppingCart' },
-    { category: 'Транспорт', limit: 15000, spent: 8900, icon: 'Car' },
-    { category: 'Рестораны', limit: 10000, spent: 6300, icon: 'Coffee' },
-    { category: 'Развлечения', limit: 8000, spent: 3200, icon: 'Tv' },
-    { category: 'Здоровье', limit: 5000, spent: 1890, icon: 'Heart' },
-  ]);
+  useEffect(() => {
+    loadData();
+  }, []);
 
-  const [goals] = useState<Goal[]>([
-    { id: '1', name: 'MacBook Pro', target: 250000, current: 178000, icon: 'Laptop' },
-    { id: '2', name: 'Отпуск в Италии', target: 180000, current: 95000, icon: 'Plane' },
-    { id: '3', name: 'Аварийный фонд', target: 300000, current: 210000, icon: 'Shield' },
-  ]);
-
-  const totalBalance = accounts.reduce((sum, acc) => sum + acc.balance, 0);
-  const monthExpenses = transactions
-    .filter(t => t.type === 'expense' && new Date(t.date).getMonth() === new Date().getMonth())
-    .reduce((sum, t) => sum + t.amount, 0);
-  const monthIncome = transactions
-    .filter(t => t.type === 'income' && new Date(t.date).getMonth() === new Date().getMonth())
-    .reduce((sum, t) => sum + t.amount, 0);
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', maximumFractionDigits: 0 }).format(amount);
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      const [dashboard, categoriesData] = await Promise.all([
+        api.getDashboard(),
+        api.getCategories(),
+      ]);
+      setDashboardData(dashboard);
+      setCategories(categoriesData.categories);
+    } catch (error) {
+      toast({
+        title: 'Ошибка загрузки',
+        description: 'Не удалось загрузить данные',
+        variant: 'destructive',
+      });
+    } finally {
+      setLoading(false);
+    }
   };
+
+  const handleAddTransaction = async () => {
+    try {
+      await api.addTransaction({
+        ...newTransaction,
+        amount: parseFloat(newTransaction.amount),
+        category_id: parseInt(newTransaction.category_id),
+        account_id: parseInt(newTransaction.account_id),
+      });
+      
+      toast({
+        title: 'Успешно',
+        description: 'Операция добавлена',
+      });
+      
+      setDialogOpen(false);
+      setNewTransaction({
+        type: 'expense',
+        amount: '',
+        category_id: '',
+        description: '',
+        transaction_date: new Date().toISOString().split('T')[0],
+        account_id: '',
+      });
+      
+      loadData();
+    } catch (error) {
+      toast({
+        title: 'Ошибка',
+        description: 'Не удалось добавить операцию',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  if (loading || !dashboardData) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <Icon name="Loader2" size={48} className="animate-spin text-accent mx-auto mb-4" />
+          <p className="text-muted-foreground">Загрузка данных...</p>
+        </div>
+      </div>
+    );
+  }
+
+  const { accounts, transactions, goals, budgets } = dashboardData;
+
+  const totalBalance = accounts.reduce((sum, acc) => sum + parseFloat(acc.balance), 0);
+  const monthExpenses = transactions
+    .filter(t => t.type === 'expense' && new Date(t.transaction_date).getMonth() === new Date().getMonth())
+    .reduce((sum, t) => sum + parseFloat(t.amount), 0);
+  const monthIncome = transactions
+    .filter(t => t.type === 'income' && new Date(t.transaction_date).getMonth() === new Date().getMonth())
+    .reduce((sum, t) => sum + parseFloat(t.amount), 0);
+
+  const formatCurrency = (amount: number | string) => {
+    const num = typeof amount === 'string' ? parseFloat(amount) : amount;
+    return new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', maximumFractionDigits: 0 }).format(num);
+  };
+
+  const filteredCategories = categories.filter(c => c.type === newTransaction.type);
 
   return (
     <div className="min-h-screen bg-background">
@@ -97,7 +128,7 @@ const Index = () => {
                 <p className="text-xs text-muted-foreground">Управление финансами</p>
               </div>
             </div>
-            <Dialog>
+            <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
               <DialogTrigger asChild>
                 <Button size="sm" className="gap-2">
                   <Icon name="Plus" size={16} />
@@ -111,7 +142,7 @@ const Index = () => {
                 <div className="space-y-4">
                   <div>
                     <Label>Тип</Label>
-                    <Select>
+                    <Select value={newTransaction.type} onValueChange={(value: 'income' | 'expense') => setNewTransaction({ ...newTransaction, type: value, category_id: '' })}>
                       <SelectTrigger>
                         <SelectValue placeholder="Выберите тип" />
                       </SelectTrigger>
@@ -123,26 +154,39 @@ const Index = () => {
                   </div>
                   <div>
                     <Label>Сумма</Label>
-                    <Input type="number" placeholder="0" />
+                    <Input type="number" placeholder="0" value={newTransaction.amount} onChange={(e) => setNewTransaction({ ...newTransaction, amount: e.target.value })} />
                   </div>
                   <div>
                     <Label>Категория</Label>
-                    <Select>
+                    <Select value={newTransaction.category_id} onValueChange={(value) => setNewTransaction({ ...newTransaction, category_id: value })}>
                       <SelectTrigger>
                         <SelectValue placeholder="Выберите категорию" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="food">Продукты</SelectItem>
-                        <SelectItem value="transport">Транспорт</SelectItem>
-                        <SelectItem value="health">Здоровье</SelectItem>
+                        {filteredCategories.map(cat => (
+                          <SelectItem key={cat.id} value={cat.id.toString()}>{cat.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Счёт</Label>
+                    <Select value={newTransaction.account_id} onValueChange={(value) => setNewTransaction({ ...newTransaction, account_id: value })}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Выберите счёт" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {accounts.map(acc => (
+                          <SelectItem key={acc.id} value={acc.id.toString()}>{acc.name}</SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
                   <div>
                     <Label>Описание</Label>
-                    <Input placeholder="Описание операции" />
+                    <Input placeholder="Описание операции" value={newTransaction.description} onChange={(e) => setNewTransaction({ ...newTransaction, description: e.target.value })} />
                   </div>
-                  <Button className="w-full">Добавить</Button>
+                  <Button className="w-full" onClick={handleAddTransaction}>Добавить</Button>
                 </div>
               </DialogContent>
             </Dialog>
@@ -202,39 +246,45 @@ const Index = () => {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                {budgets.map((budget) => {
-                  const percentage = (budget.spent / budget.limit) * 100;
-                  const isOverBudget = percentage > 100;
-                  const isNearLimit = percentage > 80 && percentage <= 100;
+                {budgets.length === 0 ? (
+                  <p className="text-center text-muted-foreground py-8">Бюджеты не установлены</p>
+                ) : (
+                  budgets.map((budget) => {
+                    const limit = parseFloat(budget.limit_amount);
+                    const spent = parseFloat(budget.spent);
+                    const percentage = (spent / limit) * 100;
+                    const isOverBudget = percentage > 100;
+                    const isNearLimit = percentage > 80 && percentage <= 100;
 
-                  return (
-                    <div key={budget.category} className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <Icon name={budget.icon} size={16} className="text-muted-foreground" />
-                          <span className="font-medium text-sm">{budget.category}</span>
+                    return (
+                      <div key={budget.category} className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <Icon name={budget.icon} size={16} className="text-muted-foreground" />
+                            <span className="font-medium text-sm">{budget.category}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-semibold">{formatCurrency(spent)}</span>
+                            <span className="text-xs text-muted-foreground">/ {formatCurrency(limit)}</span>
+                            {isOverBudget && (
+                              <Badge variant="destructive" className="text-xs">Превышен</Badge>
+                            )}
+                            {isNearLimit && (
+                              <Badge variant="outline" className="text-xs border-orange-500 text-orange-600">Близко к лимиту</Badge>
+                            )}
+                          </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-semibold">{formatCurrency(budget.spent)}</span>
-                          <span className="text-xs text-muted-foreground">/ {formatCurrency(budget.limit)}</span>
-                          {isOverBudget && (
-                            <Badge variant="destructive" className="text-xs">Превышен</Badge>
-                          )}
-                          {isNearLimit && (
-                            <Badge variant="outline" className="text-xs border-orange-500 text-orange-600">Близко к лимиту</Badge>
-                          )}
-                        </div>
+                        <Progress 
+                          value={Math.min(percentage, 100)} 
+                          className={`h-2 ${isOverBudget ? 'bg-destructive/20' : ''}`}
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Осталось: {formatCurrency(Math.max(0, limit - spent))} ({Math.max(0, 100 - percentage).toFixed(0)}%)
+                        </p>
                       </div>
-                      <Progress 
-                        value={Math.min(percentage, 100)} 
-                        className={`h-2 ${isOverBudget ? 'bg-destructive/20' : ''}`}
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        Осталось: {formatCurrency(Math.max(0, budget.limit - budget.spent))} ({Math.max(0, 100 - percentage).toFixed(0)}%)
-                      </p>
-                    </div>
-                  );
-                })}
+                    );
+                  })
+                )}
               </CardContent>
             </Card>
 
@@ -246,31 +296,35 @@ const Index = () => {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-3">
-                  {transactions.map((transaction) => (
-                    <div key={transaction.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
-                      <div className="flex items-center gap-3">
-                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                          transaction.type === 'income' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'
-                        }`}>
-                          <Icon name={transaction.type === 'income' ? 'ArrowDownLeft' : 'ArrowUpRight'} size={18} />
+                {transactions.length === 0 ? (
+                  <p className="text-center text-muted-foreground py-8">Операций пока нет</p>
+                ) : (
+                  <div className="space-y-3">
+                    {transactions.map((transaction) => (
+                      <div key={transaction.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                            transaction.type === 'income' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'
+                          }`}>
+                            <Icon name={transaction.type === 'income' ? 'ArrowDownLeft' : 'ArrowUpRight'} size={18} />
+                          </div>
+                          <div>
+                            <p className="font-medium text-sm">{transaction.description}</p>
+                            <p className="text-xs text-muted-foreground">{transaction.category_name} • {transaction.account_name}</p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="font-medium text-sm">{transaction.description}</p>
-                          <p className="text-xs text-muted-foreground">{transaction.category} • {transaction.account}</p>
+                        <div className="text-right">
+                          <p className={`font-semibold ${transaction.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>
+                            {transaction.type === 'income' ? '+' : '−'}{formatCurrency(transaction.amount)}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {new Date(transaction.transaction_date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}
+                          </p>
                         </div>
                       </div>
-                      <div className="text-right">
-                        <p className={`font-semibold ${transaction.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>
-                          {transaction.type === 'income' ? '+' : '−'}{formatCurrency(transaction.amount)}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {new Date(transaction.date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -311,7 +365,9 @@ const Index = () => {
               </CardHeader>
               <CardContent className="space-y-4">
                 {goals.map((goal) => {
-                  const percentage = (goal.current / goal.target) * 100;
+                  const target = parseFloat(goal.target_amount);
+                  const current = parseFloat(goal.current_amount);
+                  const percentage = (current / target) * 100;
                   return (
                     <div key={goal.id} className="space-y-2">
                       <div className="flex items-center justify-between">
@@ -323,8 +379,8 @@ const Index = () => {
                       </div>
                       <Progress value={percentage} className="h-2" />
                       <div className="flex justify-between text-xs">
-                        <span className="text-muted-foreground">{formatCurrency(goal.current)}</span>
-                        <span className="font-semibold">{formatCurrency(goal.target)}</span>
+                        <span className="text-muted-foreground">{formatCurrency(current)}</span>
+                        <span className="font-semibold">{formatCurrency(target)}</span>
                       </div>
                     </div>
                   );
@@ -354,27 +410,30 @@ const Index = () => {
                     <span className="text-muted-foreground">Всего за месяц</span>
                     <span className="font-bold text-lg">{formatCurrency(monthExpenses)}</span>
                   </div>
-                  <div className="space-y-2">
-                    {budgets.map((budget, index) => {
-                      const totalSpent = budgets.reduce((sum, b) => sum + b.spent, 0);
-                      const percentage = (budget.spent / totalSpent) * 100;
-                      
-                      return (
-                        <div key={index}>
-                          <div className="flex justify-between text-sm mb-1">
-                            <span>{budget.category}</span>
-                            <span className="font-semibold">{formatCurrency(budget.spent)}</span>
+                  {budgets.length > 0 && (
+                    <div className="space-y-2">
+                      {budgets.map((budget, index) => {
+                        const totalSpent = budgets.reduce((sum, b) => sum + parseFloat(b.spent), 0);
+                        const spent = parseFloat(budget.spent);
+                        const percentage = totalSpent > 0 ? (spent / totalSpent) * 100 : 0;
+                        
+                        return (
+                          <div key={index}>
+                            <div className="flex justify-between text-sm mb-1">
+                              <span>{budget.category}</span>
+                              <span className="font-semibold">{formatCurrency(spent)}</span>
+                            </div>
+                            <div className="w-full bg-muted rounded-full h-2">
+                              <div 
+                                className="bg-accent h-2 rounded-full transition-all duration-300"
+                                style={{ width: `${percentage}%` }}
+                              />
+                            </div>
                           </div>
-                          <div className="w-full bg-muted rounded-full h-2">
-                            <div 
-                              className="bg-accent h-2 rounded-full transition-all duration-300"
-                              style={{ width: `${percentage}%` }}
-                            />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               </TabsContent>
               <TabsContent value="week" className="mt-6">
